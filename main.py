@@ -1,195 +1,231 @@
-import argparse
-import csv
-from datetime import datetime
-from pathlib import Path
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+RID (Rename Images by Date)
+Author: NMINHDUCIT
+GitHub: https://github.com/nminhducit
+
+Description:
+    Rename image files based on EXIF DateTimeOriginal or file timestamps.
+    This helps organize photos by the actual time they were taken.
+"""
+
 import os
+import sys
+import csv
+import argparse
+from pathlib import Path
+from datetime import datetime
 from PIL import Image
-import piexif
-import shutil
+from PIL.ExifTags import TAGS
+from colorama import Fore, Style, init
 
-# ====== Các định dạng ảnh được hỗ trợ ======
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff")
+# Initialize colorama for colored terminal output
+init(autoreset=True)
 
-# ====== Hàm lấy timestamp chính xác nhất ======
-def get_best_timestamp(file_path: Path) -> datetime:
-    """
-    Lấy timestamp chính xác nhất theo thứ tự ưu tiên:
-    1. Nếu có EXIF:
-       - Nếu Date Modified cũ hơn cả EXIF và Date Created → ưu tiên Date Modified
-       - Ngược lại → dùng EXIF DateTimeOriginal
-    2. Nếu không có EXIF → lấy timestamp cũ nhất giữa Date Modified và Date Created
-    """
+# Supported image extensions
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
+
+# ==============================================================================
+# Utility functions
+# ==============================================================================
+
+def print_banner():
+    """Display a nice banner at program start"""
+    banner = f"""
+{Fore.CYAN}{Style.BRIGHT}
+██████╗ ██╗██████╗ 
+██╔══██╗██║██╔══██╗
+██████╔╝██║██║  ██║
+██╔═══╝ ██║██║  ██║
+██║     ██║██████╔╝
+╚═╝     ╚═╝╚═════╝   {Fore.YELLOW}RID - Rename Images by Date
+{Style.RESET_ALL}
+"""
+    print(banner)
+
+
+def get_exif_datetime(file_path: Path):
+    """Get EXIF DateTimeOriginal from an image if available."""
     try:
-        # 1. Lấy timestamp từ filesystem
-        stat = file_path.stat()
-        mod_time = datetime.fromtimestamp(stat.st_mtime)   # Date Modified
-        create_time = datetime.fromtimestamp(stat.st_ctime) # Date Created (Windows)
+        with Image.open(file_path) as img:
+            exif_data = img.getexif()
+            if not exif_data:
+                return None
 
-        # 2. Đọc EXIF DateTimeOriginal
-        exif_time = None
-        try:
-            img = Image.open(file_path)
-            exif_data = img.info.get("exif")
-            if exif_data:
-                exif_dict = piexif.load(exif_data)
+            for tag_id, value in exif_data.items():
+                tag = TAGS.get(tag_id, tag_id)
+                if tag == "DateTimeOriginal":
+                    return datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
+    except Exception:
+        return None
+    return None
 
-                # Lấy EXIF DateTimeOriginal hoặc DateTimeDigitized
-                dto = exif_dict["Exif"].get(piexif.ExifIFD.DateTimeOriginal)
-                if not dto:
-                    dto = exif_dict["Exif"].get(piexif.ExifIFD.DateTimeDigitized)
-                if not dto:
-                    dto = exif_dict["0th"].get(piexif.ImageIFD.DateTime)
 
-                if dto:
-                    exif_time = datetime.strptime(dto.decode("utf-8"), "%Y:%m:%d %H:%M:%S")
-        except Exception:
-            pass  # Không có EXIF hoặc lỗi đọc EXIF
-
-        # 3. Logic chọn timestamp
-        if exif_time:
-            if mod_time < exif_time and mod_time < create_time:
-                return mod_time
-            return exif_time
-        else:
-            return min(mod_time, create_time)
-
-    except Exception as e:
-        print(f"[WARNING] Không thể lấy timestamp cho {file_path}: {e}")
-        return datetime.fromtimestamp(file_path.stat().st_mtime)
-
-# ====== Hàm format tên file ======
-def format_new_name(timestamp: datetime, ext: str, index: int = None):
+def get_file_timestamps(file_path: Path):
     """
-    Định dạng tên file theo yêu cầu:
-    IMG_250929_1103AM.jpg
+    Get file timestamps:
+      - created_time: File creation time
+      - modified_time: Last modified time
     """
-    date_part = timestamp.strftime("%d%m%y")   # ddmmyy
-    time_part = timestamp.strftime("%I%M%p")   # 12h + AM/PM
-    new_name = f"IMG_{date_part}_{time_part}{ext.lower()}"
-    if index:
-        new_name = f"IMG_{date_part}_{time_part}_{index}{ext.lower()}"
-    return new_name
+    stat = file_path.stat()
+    created_time = datetime.fromtimestamp(stat.st_ctime)
+    modified_time = datetime.fromtimestamp(stat.st_mtime)
+    return created_time, modified_time
 
-# ====== Hàm đổi tên file ======
-def rename_images_in_dir(target_dir: Path, recursive=False, dry_run=False, log_path=None):
-    files = []
-    if recursive:
-        files = [f for f in target_dir.rglob("*") if f.suffix.lower() in IMAGE_EXTENSIONS]
-    else:
-        files = [f for f in target_dir.glob("*") if f.suffix.lower() in IMAGE_EXTENSIONS]
 
-    if not files:
-        print("[INFO] Không tìm thấy file ảnh nào.")
+def get_best_timestamp(file_path: Path):
+    """
+    Determine the best timestamp for renaming:
+      Priority:
+        1. EXIF DateTimeOriginal (if exists)
+        2. If ModifiedTime < DateTimeOriginal or CreatedTime → use ModifiedTime
+        3. Otherwise, use CreatedTime
+    """
+    exif_time = get_exif_datetime(file_path)
+    created_time, modified_time = get_file_timestamps(file_path)
+
+    # If EXIF exists, compare with modified_time
+    if exif_time:
+        if modified_time < exif_time:
+            return modified_time
+        return exif_time
+
+    # If EXIF missing, choose the oldest between created and modified
+    return min(created_time, modified_time)
+
+
+def format_new_filename(timestamp: datetime):
+    """
+    Format timestamp into string:
+    Example: IMG_250929_1103AM
+    - 25/09/29 -> 250929
+    - 11:03AM -> 1103AM
+    """
+    date_part = timestamp.strftime("%y%m%d")
+    time_part = timestamp.strftime("%I%M%p").upper()
+    return f"IMG_{date_part}_{time_part}"
+
+
+def safe_rename(file_path: Path, new_name: str, dry_run=False):
+    """
+    Safely rename a file, avoid overwriting by adding suffix _1, _2, etc.
+    """
+    target_dir = file_path.parent
+    ext = file_path.suffix.lower()
+    candidate_name = new_name + ext
+    counter = 1
+
+    while (target_dir / candidate_name).exists():
+        candidate_name = f"{new_name}_{counter}{ext}"
+        counter += 1
+
+    new_path = target_dir / candidate_name
+
+    if not dry_run:
+        file_path.rename(new_path)
+
+    return new_path
+
+
+# ==============================================================================
+# Core Function
+# ==============================================================================
+
+def rename_images_in_dir(directory: Path, recursive=False, dry_run=False, log_file="rename_logs.csv"):
+    """
+    Rename all images in a directory based on EXIF or file timestamps.
+    """
+    all_files = directory.rglob("*") if recursive else directory.glob("*")
+    images = [f for f in all_files if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS]
+
+    if not images:
+        print(Fore.RED + "No image files found.")
         return
 
-    print(f"[INFO] Tìm thấy {len(files)} file ảnh cần xử lý.\n")
-
-    # Chuẩn bị file CSV log mapping
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if not log_path:
-        log_path = target_dir / f"rename_log.csv"
-
-    with open(log_path, mode="w", newline="", encoding="utf-8") as csvfile:
+    # Prepare CSV logging
+    log_path = directory / f"rename_logs.csv"
+    with open(log_path, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["old_path", "new_path"])
+        writer.writerow(["Original Path", "New Path", "Timestamp Used"])
 
-        renamed_count = 0
-        conflict_count = 0
-        error_count = 0
+        print(Fore.GREEN + f"\n[Processing] Found {len(images)} images to rename...\n")
 
-        for file in files:
-            try:
-                # Lấy timestamp chuẩn
-                best_time = get_best_timestamp(file)
+        count = 0
+        for file in images:
+            timestamp = get_best_timestamp(file)
+            if not timestamp:
+                print(Fore.YELLOW + f"[SKIP] Cannot determine timestamp for: {file}")
+                continue
 
-                # Sinh tên mới
-                new_name = format_new_name(best_time, file.suffix)
-                new_path = file.parent / new_name
-                index = 1
-                while new_path.exists():
-                    new_name = format_new_name(best_time, file.suffix, index)
-                    new_path = file.parent / new_name
-                    index += 1
-                    conflict_count += 1
+            new_name = format_new_filename(timestamp)
+            new_path = safe_rename(file, new_name, dry_run=dry_run)
 
-                if dry_run:
-                    print(f"[DRY-RUN] {file} -> {new_path}")
-                else:
-                    file.rename(new_path)
-                    print(f"[RENAME] {file.name} -> {new_path.name}")
+            writer.writerow([str(file), str(new_path), timestamp.strftime("%Y-%m-%d %H:%M:%S")])
 
-                writer.writerow([str(file), str(new_path)])
-                renamed_count += 1
+            if dry_run:
+                print(Fore.CYAN + f"[DRY-RUN] {file.name} -> {new_path.name}")
+            else:
+                print(Fore.GREEN + f"[RENAME] {file.name} -> {new_path.name}")
+            count += 1
 
-            except PermissionError:
-                print(f"[ERROR] Không có quyền đổi tên: {file}")
-                error_count += 1
-            except Exception as e:
-                print(f"[ERROR] Lỗi khi xử lý {file}: {e}")
-                error_count += 1
+    print(Fore.BLUE + "\n=== Summary ===")
+    print(Fore.WHITE + f"Total images processed: {len(images)}")
+    print(Fore.WHITE + f"Successfully renamed: {count}")
+    print(Fore.WHITE + f"Log saved at: {log_path}")
+    print(Fore.GREEN + "Operation completed.\n")
 
-    # In báo cáo
-    print("\n=== KẾT QUẢ ===")
-    print(f"Tổng số file ảnh: {len(files)}")
-    print(f"Đổi tên thành công: {renamed_count}")
-    print(f"Trùng tên đã xử lý: {conflict_count}")
-    print(f"Lỗi: {error_count}")
-    print(f"Mapping lưu tại: {log_path}")
-    if dry_run:
-        print("[NOTE] Đây là chế độ dry-run, không có file nào bị đổi tên thực tế.")
 
-# ====== Hàm rollback ======
-def rollback_from_csv(csv_path):
-    if not Path(csv_path).exists():
-        print("[ERROR] File mapping không tồn tại.")
-        return
+# ==============================================================================
+# Main CLI
+# ==============================================================================
 
-    with open(csv_path, newline="", encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            old_path = Path(row["old_path"])
-            new_path = Path(row["new_path"])
-            if new_path.exists():
-                try:
-                    new_path.rename(old_path)
-                    print(f"[ROLLBACK] {new_path.name} -> {old_path.name}")
-                except Exception as e:
-                    print(f"[ERROR] Rollback thất bại cho {new_path}: {e}")
-
-# ====== Main CLI ======
 def main():
-    parser = argparse.ArgumentParser(description="Đổi tên file ảnh dựa trên timestamp.")
-    subparsers = parser.add_subparsers(dest="command")
+    parser = argparse.ArgumentParser(
+        description="RID - Rename Images by Date\nCredit: NMINHDUCIT",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
 
-    # Subcommand: rename
-    rename_parser = subparsers.add_parser("rename", help="Đổi tên ảnh trong thư mục")
-    rename_parser.add_argument("--dir", required=True, help="Thư mục chứa ảnh")
-    rename_parser.add_argument("--recursive", action="store_true", help="Đệ quy vào thư mục con")
-    rename_parser.add_argument("--dry-run", action="store_true", help="Chỉ xem trước, không thực hiện")
-    rename_parser.add_argument("--log", help="Đường dẫn file CSV log mapping")
-
-    # Subcommand: rollback
-    rollback_parser = subparsers.add_parser("rollback", help="Phục hồi tên file từ CSV log")
-    rollback_parser.add_argument("--map", required=True, help="Đường dẫn đến file mapping CSV")
+    parser.add_argument(
+        "rename",
+        help="Action to perform (currently only supports 'rename')"
+    )
+    parser.add_argument(
+        "--dir",
+        type=str,
+        required=True,
+        help="Target directory containing images"
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Search for images in subdirectories recursively"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform a dry run without actually renaming files"
+    )
 
     args = parser.parse_args()
 
-    if args.command == "rename":
-        target_dir = Path(args.dir)
-        if not target_dir.exists():
-            print("[ERROR] Thư mục không tồn tại.")
-            return
+    print_banner()
+
+    target_dir = Path(args.dir).resolve()
+    if not target_dir.exists():
+        print(Fore.RED + f"Error: Directory does not exist: {target_dir}")
+        sys.exit(1)
+
+    if args.rename.lower() == "rename":
         rename_images_in_dir(
             target_dir,
             recursive=args.recursive,
-            dry_run=args.dry_run,
-            log_path=Path(args.log) if args.log else None
+            dry_run=args.dry_run
         )
-
-    elif args.command == "rollback":
-        rollback_from_csv(args.map)
     else:
-        parser.print_help()
+        print(Fore.RED + "Invalid action. Only 'rename' is supported.")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
