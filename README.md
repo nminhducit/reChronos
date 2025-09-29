@@ -47,7 +47,7 @@ pip install --user pillow piexif
 
 Run the script with the following command structure:
 ```bash
-python rename_images_by_date.py <command> [options]
+python main.py <command> [options]
 ```
 
 Available commands:
@@ -55,21 +55,21 @@ Available commands:
 - `rollback` → Restore images to their original names using the CSV mapping file
 ### 1. Rename images in a folder
 ```bash
-python rename_images_by_date.py rename --dir "./photos"
+python main.py rename --dir "./photos"
 ```
 ### 2. Rename images recursively (including subfolders)
 ```bash
-python rename_images_by_date.py rename --dir "./photos" --recursive
+python main.py rename --dir "./photos" --recursive
 ```
 ### 3. Preview results without renaming (dry-run)
 > **Recommended:** Always run in dry-run mode first to ensure the output looks correct.
 ```bash
-python rename_images_by_date.py rename --dir "./photos" --recursive --dry-run
+python main.py rename --dir "./photos" --recursive --dry-run
 ```
 ### 4. Rollback from CSV mapping
 > If you need to restore original filenames:
 ```bash
-python rename_images_by_date.py rollback --map "./photos/rename_logs.csv"
+python main.py rollback --map "./photos/rename_logs.csv"
 ```
 
 ---
@@ -83,7 +83,7 @@ photos/
 ```
 ### Dry-run command:
 ```bash
-python rename_images_by_date.py rename --dir "./photos" --recursive --dry-
+python main.py rename --dir "./photos" --recursive --dry-
 ```
 ### Output:
 ```yaml
