@@ -1,0 +1,7 @@
+colorama
+pillow
+pymediainfo
+piexif      
+tqdm
+python-dateutil
+pandas
