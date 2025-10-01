@@ -1,4 +1,4 @@
-# RID - Recursive Image Date Renamer
+# reChronos - Bring order to your chaotic filesystem
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
@@ -44,7 +44,7 @@ pip install -r requirements.txt
 ### Run the Program
 
 ```bash
-python RID_v1.0.0.py
+python rechronos.py
 ```
 
 ### Available Commands
@@ -69,7 +69,7 @@ Total files planned: 2
 
 #### Rename files
 ```
-reChronos@root# "C:\Users\Duke\Pictures"
+reChronos@root# "C:\Users\ADMIN\Pictures"
 Proceed with rename? (yes/no): yes
   photo1.jpg → JPG_241001_0230PM.jpg
   photo2.jpg → JPG_241001_0231PM.jpg
@@ -78,7 +78,7 @@ Batch 20241001153555 completed: 2 files renamed
 
 #### Rollback changes
 ```
-reChronos@root# rollback "C:\Users\Duke\Pictures"
+reChronos@root# rollback "C:\Users\ADMIN\Pictures"
 Rollback last batch? (yes/no): yes
 ✓ Rolled back: JPG_241001_0230PM.jpg → photo1.jpg
 ✓ Rolled back: JPG_241001_0231PM.jpg → photo2.jpg
@@ -90,7 +90,7 @@ Rollback complete: 2/2 files restored
 ```yaml
 reChronos/
 ├─ src/
-│  └─ reChronos.py                # main source (entrypoint)
+│  └─ rechronos.py                # main source (entrypoint)
 ├─ assets/
 │  └─ rechronos_icon.png          # editable source PNG for icon
 │  └─ rechronos.ico               # generated .ico (optional to commit)
@@ -117,24 +117,19 @@ reChronos/
 
 ## 🔨 Building Executable
 
-### Using PyInstaller
+### On Windows with PowerShell:
 
 Install PyInstaller:
 ```bash
-pip install pyinstaller
+pyinstaller --onefile --icon assets/rechronos.ico --uac-admin src/rechronos.py
 ```
 
-Build with admin rights and custom icon:
+### On Linux/macOS:
 ```bash
-pyinstaller --onefile --icon=rid_icon.ico --name=RID --uac-admin RID_v1.0.0.py
+pyinstaller --onefile src/rechronos.py
 ```
 
-Or use the provided batch script:
-```bash
-build_exe.bat
-```
-
-The executable will be in `dist/RID.exe`
+Output will be in `dist/rechronos.exe`
 
 ## 📊 Log File Format
 
@@ -160,7 +155,7 @@ Operations are logged in `rename_log.csv` inside each processed directory:
 
 ### "No log found to rollback"
 - Ensure `rename_log.csv` exists in the target directory
-- Rollback only works on directories previously renamed by RID
+- Rollback only works on directories previously renamed by reChronos
 
 ### "Invalid directory" error
 - Check path spelling and use quotes for paths with spaces
