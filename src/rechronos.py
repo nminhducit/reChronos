@@ -325,6 +325,28 @@ def read_log_csv(log_path: Path) -> List[Dict[str, str]]:
     with log_path.open("r", newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
 
+def clear_logs(root: Path) -> None:
+    """
+    Recursively delete all rename_log.csv files under root.
+    """
+    logs = list(root.rglob("rename_log.csv"))
+    if not logs:
+        print(Fore.YELLOW + "No rename_log.csv files found.\n")
+        return
+
+    print(Fore.CYAN + f"Found {len(logs)} log file(s). Deleting...\n")
+    deleted = 0
+
+    for log in logs:
+        try:
+            log.unlink()
+            print(Fore.GREEN + f"✓ Deleted: {log}")
+            deleted += 1
+        except Exception as e:
+            print(Fore.RED + f"✗ Failed to delete {log}: {e}")
+
+    print(Fore.CYAN + f"Clear complete: {deleted}/{len(logs)} logs removed.\n")
+
 
 def find_last_batch(log_rows: List[Dict[str, str]]) -> str | None:
     """
@@ -437,7 +459,6 @@ def rollback_last_batch(root: Path) -> None:
     print(Fore.CYAN + f"\nRollback complete: {success_count}/{len(batch_rows)} files restored")
     print(Fore.CYAN + f"Rollback logged to {log_path}\n")
 
-
 # ---------------------------
 # Interactive CLI
 # ---------------------------
@@ -447,6 +468,7 @@ def print_help() -> None:
     print("  preview [path]   - Show rename plan for path (default: current dir).")
     print("  rename [path]    - Execute rename on directory (default: current dir).")
     print("  rollback [path]  - Rollback last rename batch (default: current dir).")
+    print("  clearlog [path]  - Delete all rename_log.csv recursively")
     print("  help             - Show this help.")
     print("  quit / exit      - Exit the program.")
     print()
@@ -559,11 +581,27 @@ def interactive_loop() -> None:
         if cmd == "help":
             print_help()
             continue
-
+        
         # Command: quit program
         if cmd in ("quit", "exit"):
             print("Goodbye.")
             break
+
+        # Command: clear logs
+        if cmd == "clearlog":
+            target = Path(args[0]).expanduser().resolve() if args else Path.cwd()
+            
+            if not target.exists() or not target.is_dir():
+                print(Fore.RED + f"Invalid directory: {target}")
+                continue
+            
+            confirm = input(Fore.MAGENTA + f"Delete all rename_log.csv under {target}? (yes/no): " + Style.RESET_ALL).strip().lower()
+            if confirm in ("y", "yes"):
+                clear_logs(target)
+            else:
+                print(Fore.CYAN + "Clear canceled.\n")
+            continue
+
 
         # Unknown command
         print(Fore.RED + f"Unknown command: {cmd}. Type 'help' to see available commands.")
